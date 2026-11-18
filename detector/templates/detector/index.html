@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Сравнение детекторов лиц</title>
+<style>
+    body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem auto;
+        max-width: 1100px;
+    }
+    h1 { font-size: 1.4rem; }
+    .controls {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        align-items: end;
+        margin-bottom: 1.5rem;
+    }
+    .controls label {
+        display: flex;
+        flex-direction: column;
+        font-size: 14px;
+    }
+    .canvas-wrap {
+        position: relative;
+        display: inline-block;
+        border: 1px solid #ccc;
+        max-width: 100%;
+    }
+    .canvas-wrap canvas { display: block; max-width: 100%; }
+    table {
+        border-collapse: collapse;
+        margin-top: 1rem;
+        width: 100%;
+    }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
+    th { background: #f3f3f3; }
+    #status { color: #555; font-size: 14px; min-height: 1.2em; }
+</style>
+</head>
+<body>
+
+<h1>Сравнительное исследование: Haar Cascade vs MTCNN</h1>
+
+<form id="form" class="controls">
+    <label>Изображение
+        <input type="file" name="image" accept="image/*" required>
+    </label>
+
+    <label>Детектор
+        <select name="detector_type">
+            <option value="haar">Haar Cascade</option>
+            <option value="mtcnn">MTCNN (CNN)</option>
+        </select>
+    </label>
+
+    <label>Освещённость
+        <select name="lighting">
+            <option value="normal">Нормальная</option>
+            <option value="low">Низкая</option>
+            <option value="bright">Засветка</option>
+        </select>
+    </label>
+
+    <button type="submit">Запустить детекцию</button>
+</form>
+
+<p id="status"></p>
+<div class="canvas-wrap"><canvas id="canvas"></canvas></div>
+<table id="metrics" style="display:none">
+    <thead>
+        <tr>
+            <th>Детектор</th>
+            <th>Кол-во лиц</th>
+            <th>Время (мс)</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<script>
+const form = document.getElementById('form');
+const statusEl = document.getElementById('status');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const metricsTable = document.getElementById('metrics');
+
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusEl.textContent = 'Обработка…';
+
+    const fd = new FormData(form);
+    try {
+        const res = await fetch('/api/detect/', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        await drawResult(data);
+        updateMetrics(data.result);
+        statusEl.textContent =
+            `Готово: ${data.result.count} лиц за ${data.result.time_ms} мс`;
+    } catch (err) {
+        statusEl.textContent = 'Ошибка: ' + err.message;
+    }
+});
+
+function loadImage(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+    });
+}
+
+async function drawResult(data) {
+    const img = await loadImage(data.image_url);
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+
+    ctx.lineWidth = Math.max(2, canvas.width / 300);
+    ctx.strokeStyle = data.result.detector === 'haar' ? '#00aa00' : '#ff3b30';
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = ctx.strokeStyle;
+
+    data.result.faces.forEach((f, i) => {
+        ctx.strokeRect(f.x, f.y, f.w, f.h);
+        const label = f.confidence < 1.0
+            ? `#${i + 1} ${(f.confidence * 100).toFixed(1)}%`
+            : `#${i + 1}`;
+        ctx.fillText(label, f.x + 2, Math.max(16, f.y - 4));
+    });
+}
+
+function updateMetrics(result) {
+    metricsTable.style.display = 'table';
+    metricsTable.querySelector('tbody').innerHTML = `
+        <tr>
+            <td>${result.detector.toUpperCase()}</td>
+            <td>${result.count}</td>
+            <td>${result.time_ms}</td>
+        </tr>`;
+}
+</script>
+</body>
+</html>

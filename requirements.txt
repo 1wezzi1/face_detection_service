@@ -1,0 +1,6 @@
+Django==4.2.7
+opencv-python-headless==4.8.1.78
+facenet-pytorch==2.5.3
+torch==2.10.0
+torchvision==0.25.0
+numpy==1.26.2
